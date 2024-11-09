@@ -1,0 +1,67 @@
+name: Test and Deploy to S3
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]  # Updated to use Node.js 18 (LTS), 20, and 22
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}  # Use matrix node version
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Run unit tests
+      run: npm test
+
+    - name: Run integration tests
+      run: npm run test:integration
+
+  deploy:
+    needs: test  # Ensure deploy only happens if tests pass
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: 22  # Use Node.js 22 for deployment as your app is built with this version
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Build app
+      run: npm run build
+
+    - name: Deploy to S3
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_BUCKET_NAME: ${{ secrets.AWS_BUCKET_NAME }}
+      run: |
+        aws s3 sync dist s3://$AWS_BUCKET_NAME --delete
+
+    - name: Invalidate CloudFront cache
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.AWS_CLOUDFRONT_DISTRIBUTION_ID }}
+      run: |
+        aws cloudfront create-invalidation --distribution-id $AWS_CLOUDFRONT_DISTRIBUTION_ID --paths "/*"
